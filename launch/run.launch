@@ -1,0 +1,83 @@
+<launch>
+    <node pkg="tf" type="static_transform_publisher" name="base_footprint2base_link" args="0 0 0.08 0 0 0 base_footprint base_link 10"/>
+    <node pkg="tf" type="static_transform_publisher" name="base_link2laser" args="0.22 0 0.05 3.1415926535 0 0 base_link laser 10"/>
+    <node pkg="tf" type="static_transform_publisher" name="base_link2imu" args="0.22 0 0.05 0 0 0 base_link IMU_link 10"/>
+    <arg name="lidar" default="rplidar_a1"/>
+    <node pkg="dstyleb" type="driver.py" name="racecar_node" />
+    <node name="rplidarNode"          pkg="rplidar_ros"  type="rplidarNode" output="screen">
+        <param name="serial_port"         type="string" value="/dev/tianbot_rplidar"/>
+        <param if="$(eval 'a3' in lidar)" name="serial_baudrate" type="int" value="256000"/><!--A3 -->
+        <param name="frame_id"            type="string" value="laser"/>
+        <param name="inverted"            type="bool"   value="false"/>
+        <param name="angle_compensate"    type="bool"   value="true"/>
+        <param if="$(eval 'a3' in lidar)" name="scan_mode" type="string" value="Sensitivity"/>
+    </node>
+    <node pkg="dstyleb" type="laserFilter.py" name="laserFilter" output="screen"/>
+    <node pkg="dstyleb" type="cmdConverter.py" name="cmdConverter" output="screen"/>
+    <node pkg="rf2o_laser_odometry" type="rf2o_laser_odometry_node" name="rf2o_laser_odometry">
+        <param name="laser_scan_topic" value="/scan_filtered"/>        # topic where the lidar scans are being published
+        <param name="odom_topic" value="/odom_rf2o" />              # topic where tu publish the odometry estimations
+        <param name="publish_tf" value="false" />                   # wheter or not to publish the tf::transform (base->odom) this should be pub by ekf_se
+        <param name="base_frame_id" value="base_footprint"/>            # frame_id (tf) of the mobile robot base. A tf transform from the laser_frame to the base_frame is mandatory
+        <param name="odom_frame_id" value="odom" />                # frame_id (tf) to publish the odometry estimations
+        <param name="init_pose_from_topic" value="" /> # (Odom topic) Leave empty to start at point (0,0)
+        <param name="freq" value="100.0"/>                            # Execution frequency.
+   </node>
+    <node pkg="robot_localization" type="ekf_localization_node" name="ekf_se" clear_params="true">
+        <rosparam command="load" file="$(find dstyleb)/param/ekf.yaml" />
+    </node>
+    <arg name="map_file" default="$(find dstyleb)/maps/208.yaml" />
+    <node name="map_server" pkg="map_server" type="map_server" args="$(arg map_file)" />
+    <node pkg="amcl" type="amcl" name="amcl" output="screen">
+	<remap from="scan" to="scan_filtered" />
+        <param name="transform_tolerance" value="0.2" />
+        <param name="gui_publish_rate" value="10.0"/>
+        <param name="laser_max_beams" value="50"/>
+        <param name="min_particles" value="500"/>
+        <param name="max_particles" value="1000"/>
+        <param name="kld_err" value="0.05"/>
+        <param name="kld_z" value="0.99"/>
+        <param name="odom_alpha1" value="0.2"/>
+        <param name="odom_alpha2" value="0.2"/>
+        <param name="odom_alpha3" value="0.8"/>
+        <param name="odom_alpha4" value="0.2"/>
+        <param name="laser_z_hit" value="0.5"/>
+        <param name="laser_z_short" value="0.05"/>
+        <param name="laser_z_max" value="0.05"/>
+        <param name="laser_z_rand" value="0.5"/>
+        <param name="laser_sigma_hit" value="0.2"/>
+        <param name="laser_lambda_short" value="0.1"/>
+        <param name="laser_lambda_short" value="0.1"/>
+        <param name="laser_model_type" value="likelihood_field"/>
+        <param name="laser_likelihood_max_dist" value="2.0"/>
+        <param name="update_min_d" value="0.01"/>
+        <param name="update_min_a" value="0.01"/>
+        <param name="resample_interval" value="1"/>
+        <param name="transform_tolerance" value="0.1"/>
+        <param name="recovery_alpha_slow" value="0.0"/>
+        <param name="recovery_alpha_fast" value="0.1"/>
+        <param name="use_map_topic" value="true"/>
+        <param name="first_map_only" value="true"/>
+        <param name="tf_broadcast" value="true"/>
+        <param name="odom_frame_id" value="/odom"/>
+        <param name="global_frame_id" value="/map"/>
+        <param name="base_frame_id" value="/base_footprint"/>
+        <param name="odom_model_type" value="diff"/>
+        <param name="initial_pose_x" value="0"/>
+        <param name="initial_pose_y" value="0"/>
+        <param name="initial_pose_a" value="0"/>
+        <param name="initial_cov_xx" value="0.25" />
+        <param name="initial_cov_yy" value="0.25" />
+        <param name="initial_cov_aa" value="0.2" />
+    </node>
+    <node pkg="move_base" type="move_base" respawn="false" name="move_base">
+        <rosparam file="$(find dstyleb)/param/local_costmap_params.yaml" command="load"/>
+        <rosparam file="$(find dstyleb)/param/global_costmap_params.yaml" command="load"/> 
+        <rosparam file="$(find dstyleb)/param/move_base_params.yaml" command="load"/>
+	<rosparam file="$(find dstyleb)/param/teb_local_planner_params.yaml" command="load" />        
+	<param name="base_global_planner" value="global_planner/GlobalPlanner" />
+        <param name="base_local_planner" value="teb_local_planner/TebLocalPlannerROS" />
+	<remap from="/odom" to="/odometry/filtered"/>
+    </node>
+</launch>
+
